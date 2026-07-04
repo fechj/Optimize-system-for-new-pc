@@ -191,6 +191,8 @@ function Get-GameBlockerStatusText {
     if ($Mode -eq 'Allow' -and -not [string]::IsNullOrWhiteSpace([string]$State.allowUntilUtc)) {
         $UntilLocal = ([datetime]::Parse([string]$State.allowUntilUtc)).ToLocalTime().ToString('yyyy-MM-dd HH:mm:ss')
         $Text = "$Text`nAllowed until: $UntilLocal"
+    } elseif ($Mode -eq 'Allow') {
+        $Text = "$Text`nAllowed until: permanent, until /block"
     }
 
     return "$Text`nComputer: $env:COMPUTERNAME"
@@ -221,26 +223,39 @@ function Invoke-GameBlockerTelegramCommand {
         }
         '/allow' {
             $Minutes = 60
+            $PermanentAccess = $false
             if ($Parts.Count -ge 2) {
-                $ParsedMinutes = 0
-                if ([int]::TryParse([string]$Parts[1], [ref]$ParsedMinutes)) {
-                    $Minutes = [Math]::Min(1440, [Math]::Max(1, $ParsedMinutes))
+                $AllowArgument = ([string]$Parts[1]).ToLowerInvariant()
+                if ($AllowArgument -in @('forever', 'permanent')) {
+                    $PermanentAccess = $true
+                } else {
+                    $ParsedMinutes = 0
+                    if ([int]::TryParse([string]$Parts[1], [ref]$ParsedMinutes)) {
+                        $Minutes = [Math]::Min(1440, [Math]::Max(1, $ParsedMinutes))
+                    }
                 }
             }
 
-            $AllowUntilUtc = [datetime]::UtcNow.AddMinutes($Minutes)
-            Set-GameBlockerStateFile -InstallDir $InstallDir -Mode Allow -AllowUntilUtc $AllowUntilUtc
-            Set-GameBlockerFirewallEnabled -Enabled $false | Out-Null
-            Publish-GameBlockerEvent -InstallDir $InstallDir -Type 'telegram-allow' -Message "Telegram command allowed game access for $Minutes minute(s)." -Data @{
-                allowUntilUtc = $AllowUntilUtc.ToString('o')
+            if ($PermanentAccess) {
+                Set-GameBlockerStateFile -InstallDir $InstallDir -Mode Allow -AllowUntilUtc $null
+                Set-GameBlockerFirewallEnabled -Enabled $false | Out-Null
+                Publish-GameBlockerEvent -InstallDir $InstallDir -Type 'telegram-allow' -Message 'Telegram command allowed game access permanently until /block.'
+                Send-GameBlockerTelegramReply -Telegram $Telegram -Text 'Allowed game access permanently. Use /block to block again.'
+            } else {
+                $AllowUntilUtc = [datetime]::UtcNow.AddMinutes($Minutes)
+                Set-GameBlockerStateFile -InstallDir $InstallDir -Mode Allow -AllowUntilUtc $AllowUntilUtc
+                Set-GameBlockerFirewallEnabled -Enabled $false | Out-Null
+                Publish-GameBlockerEvent -InstallDir $InstallDir -Type 'telegram-allow' -Message "Telegram command allowed game access for $Minutes minute(s)." -Data @{
+                    allowUntilUtc = $AllowUntilUtc.ToString('o')
+                }
+                Send-GameBlockerTelegramReply -Telegram $Telegram -Text "Allowed game access for $Minutes minute(s). Until: $($AllowUntilUtc.ToLocalTime().ToString('yyyy-MM-dd HH:mm:ss'))"
             }
-            Send-GameBlockerTelegramReply -Telegram $Telegram -Text "Allowed game access for $Minutes minute(s). Until: $($AllowUntilUtc.ToLocalTime().ToString('yyyy-MM-dd HH:mm:ss'))"
         }
         '/status' {
             Send-GameBlockerTelegramReply -Telegram $Telegram -Text (Get-GameBlockerStatusText -InstallDir $InstallDir)
         }
         '/help' {
-            Send-GameBlockerTelegramReply -Telegram $Telegram -Text "Commands:`n/block`n/allow 60`n/status"
+            Send-GameBlockerTelegramReply -Telegram $Telegram -Text "Commands:`n/block`n/allow 60`n/allow forever`n/status"
         }
         default {
             Send-GameBlockerTelegramReply -Telegram $Telegram -Text "Unknown command. Use /block, /allow 60, /status."

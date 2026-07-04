@@ -51,11 +51,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:WGB_SOURCE_BASE_URL
 ```text
 /block
 /allow 60
+/allow forever
 /status
 /help
 ```
 
 `/allow 60` разрешает игры на 60 минут. Можно указать от 1 до 1440 минут. Когда время закончится, watcher сам вернет блокировку.
+
+`/allow forever` разрешает игры без срока. Блокировка вернется только после команды `/block`.
 
 Важно: это не remote shell. Бот не выполняет произвольный PowerShell, а принимает только эти четыре команды.
 
