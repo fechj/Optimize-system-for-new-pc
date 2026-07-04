@@ -165,6 +165,27 @@ function Get-GameBlockerStatusText {
     return "$Text`nComputer: $env:COMPUTERNAME"
 }
 
+function Start-GameBlockerSelfUninstall {
+    param(
+        [string]$InstallDir,
+        [object]$Telegram
+    )
+
+    $UninstallScript = Join-Path $InstallDir 'scripts\Uninstall-GameBlocker.ps1'
+    if (-not (Test-Path -LiteralPath $UninstallScript)) {
+        Send-GameBlockerTelegramReply -Telegram $Telegram -Text "Uninstall script not found: $UninstallScript"
+        return
+    }
+
+    Publish-GameBlockerEvent -InstallDir $InstallDir -Type 'telegram-uninstall-requested' -Message 'Telegram command requested WorkGameBlocker uninstall.'
+    Send-GameBlockerTelegramReply -Telegram $Telegram -Text 'Uninstall started. This removes only WorkGameBlocker task, firewall rules, and files.'
+
+    $PowerShellExe = Join-Path $PSHOME 'powershell.exe'
+    $ArgumentList = "-NoProfile -ExecutionPolicy Bypass -File `"$UninstallScript`""
+    Start-Process -FilePath $PowerShellExe -ArgumentList $ArgumentList -WindowStyle Hidden
+    exit 0
+}
+
 function Invoke-GameBlockerTelegramCommand {
     param(
         [string]$InstallDir,
@@ -221,11 +242,17 @@ function Invoke-GameBlockerTelegramCommand {
         '/status' {
             Send-GameBlockerTelegramReply -Telegram $Telegram -Text (Get-GameBlockerStatusText -InstallDir $InstallDir)
         }
+        '/uninstall' {
+            Start-GameBlockerSelfUninstall -InstallDir $InstallDir -Telegram $Telegram
+        }
+        '/remove' {
+            Start-GameBlockerSelfUninstall -InstallDir $InstallDir -Telegram $Telegram
+        }
         '/help' {
-            Send-GameBlockerTelegramReply -Telegram $Telegram -Text "Commands:`n/block`n/allow 60`n/allow forever`n/status"
+            Send-GameBlockerTelegramReply -Telegram $Telegram -Text "Commands:`n/block`n/allow 60`n/allow forever`n/status`n/uninstall"
         }
         default {
-            Send-GameBlockerTelegramReply -Telegram $Telegram -Text "Unknown command. Use /block, /allow 60, /status."
+            Send-GameBlockerTelegramReply -Telegram $Telegram -Text "Unknown command. Use /block, /allow 60, /allow forever, /status, /uninstall."
         }
     }
 }
