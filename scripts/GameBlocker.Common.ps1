@@ -312,3 +312,25 @@ function Stop-GameBlockerBlockedProcesses {
 
     return $Stopped
 }
+
+function Stop-GameBlockerExistingWatchers {
+    param([string]$InstallDir)
+
+    $Stopped = 0
+    $InstallDirPattern = [regex]::Escape($InstallDir)
+    $Processes = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+            $_.ProcessId -ne $PID -and
+            $_.CommandLine -match 'Watch-GameProcesses\.ps1' -and
+            ($_.CommandLine -match $InstallDirPattern -or $_.CommandLine -match 'WorkGameBlocker')
+        })
+
+    foreach ($Process in $Processes) {
+        try {
+            Stop-Process -Id $Process.ProcessId -Force -ErrorAction Stop
+            $Stopped++
+        } catch {
+        }
+    }
+
+    return $Stopped
+}

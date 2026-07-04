@@ -20,6 +20,9 @@ $SourceRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 
 Assert-GameBlockerAdmin
 
+Stop-ScheduledTask -TaskName $script:GameBlockerTaskName -TaskPath $script:GameBlockerTaskPath -ErrorAction SilentlyContinue
+$OldWatcherCount = Stop-GameBlockerExistingWatchers -InstallDir $InstallDir
+
 function Protect-GameBlockerInstallDir {
     param([string]$Path)
 
@@ -98,6 +101,7 @@ Publish-GameBlockerEvent -InstallDir $InstallDir -Type 'installed' -Message 'Gam
     telegram      = $TelegramEnabled
     telegramControl = [bool]($TelegramEnabled -and $EnableTelegramControl)
     remoteControl = $ControlEnabled
+    stoppedOldWatchers = $OldWatcherCount
     mode          = if ($StartAllowed) { 'Allow' } else { 'Block' }
 }
 
