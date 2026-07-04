@@ -67,6 +67,7 @@ $TelegramConfig = [ordered]@{
     pollSeconds    = $TelegramPollSeconds
 }
 $TelegramConfig | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $InstallDir 'telegram.json') -Encoding UTF8
+$InitializedTelegramOffset = Initialize-GameBlockerTelegramOffset -InstallDir $InstallDir
 
 $ControlEnabled = -not [string]::IsNullOrWhiteSpace($ControlUrl)
 $ControlConfig = [ordered]@{
@@ -100,6 +101,7 @@ Publish-GameBlockerEvent -InstallDir $InstallDir -Type 'installed' -Message 'Gam
     firewallRules = $FirewallRuleCount
     telegram      = $TelegramEnabled
     telegramControl = [bool]($TelegramEnabled -and $EnableTelegramControl)
+    initializedTelegramOffset = $InitializedTelegramOffset
     remoteControl = $ControlEnabled
     stoppedOldWatchers = $OldWatcherCount
     mode          = if ($StartAllowed) { 'Allow' } else { 'Block' }

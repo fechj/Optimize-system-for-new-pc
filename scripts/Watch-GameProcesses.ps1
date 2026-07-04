@@ -140,39 +140,6 @@ function Apply-GameBlockerRemoteControl {
     }
 }
 
-function Get-GameBlockerTelegramPollingState {
-    param([string]$InstallDir)
-
-    $Paths = Get-GameBlockerPaths -InstallDir $InstallDir
-    if (-not (Test-Path -LiteralPath $Paths.TelegramState)) {
-        return [pscustomobject]@{
-            lastUpdateId = $null
-            lastPollUtc  = $null
-            lastErrorUtc = $null
-        }
-    }
-
-    return Get-Content -LiteralPath $Paths.TelegramState -Raw | ConvertFrom-Json
-}
-
-function Set-GameBlockerTelegramPollingState {
-    param(
-        [string]$InstallDir,
-        [Nullable[int64]]$LastUpdateId,
-        [string]$LastPollUtc,
-        [string]$LastErrorUtc
-    )
-
-    $Paths = Get-GameBlockerPaths -InstallDir $InstallDir
-    $State = [ordered]@{
-        lastUpdateId = if ($LastUpdateId.HasValue) { $LastUpdateId.Value } else { $null }
-        lastPollUtc  = $LastPollUtc
-        lastErrorUtc = $LastErrorUtc
-    }
-
-    $State | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $Paths.TelegramState -Encoding UTF8
-}
-
 function Send-GameBlockerTelegramReply {
     param(
         [object]$Telegram,
@@ -266,74 +233,100 @@ function Invoke-GameBlockerTelegramCommand {
 function Apply-GameBlockerTelegramControl {
     param([string]$InstallDir)
 
-    $Paths = Get-GameBlockerPaths -InstallDir $InstallDir
-    if (-not (Test-Path -LiteralPath $Paths.Telegram)) {
-        return
-    }
-
-    $Telegram = Get-Content -LiteralPath $Paths.Telegram -Raw | ConvertFrom-Json
-    if (-not $Telegram.enabled -or -not $Telegram.controlEnabled) {
-        return
-    }
-    if ([string]::IsNullOrWhiteSpace([string]$Telegram.botToken) -or [string]::IsNullOrWhiteSpace([string]$Telegram.allowedChatId)) {
-        return
-    }
-
-    $AllowedChatId = [string]$Telegram.allowedChatId
-    $PollSeconds = [Math]::Max(2, [int]$Telegram.pollSeconds)
-    $Now = [datetime]::UtcNow
-    if (($Now - $script:LastTelegramPollUtc).TotalSeconds -lt $PollSeconds) {
-        return
-    }
-    $script:LastTelegramPollUtc = $Now
-
-    $PollingState = Get-GameBlockerTelegramPollingState -InstallDir $InstallDir
-    $LastUpdateId = $null
-    if (-not [string]::IsNullOrWhiteSpace([string]$PollingState.lastUpdateId)) {
-        $LastUpdateId = [int64]$PollingState.lastUpdateId
-    }
-
+    $TelegramMutex = New-Object System.Threading.Mutex($false, 'Global\WorkGameBlockerTelegramControl')
+    $TelegramMutexAcquired = $false
     try {
-        $Uri = "https://api.telegram.org/bot$($Telegram.botToken)/getUpdates"
-        $Body = @{
-            timeout         = 0
-            allowed_updates = '["message"]'
-        }
-        if ($null -ne $LastUpdateId) {
-            $Body.offset = $LastUpdateId + 1
+        $TelegramMutexAcquired = $TelegramMutex.WaitOne(0)
+        if (-not $TelegramMutexAcquired) {
+            return
         }
 
-        $Response = Invoke-RestMethod -Method Post -Uri $Uri -Body $Body -TimeoutSec 10
-        if (-not $Response.ok) {
-            throw 'Telegram getUpdates returned ok=false.'
+        $Paths = Get-GameBlockerPaths -InstallDir $InstallDir
+        if (-not (Test-Path -LiteralPath $Paths.Telegram)) {
+            return
         }
 
-        $NewestUpdateId = $LastUpdateId
-        foreach ($Update in @($Response.result)) {
-            if ($null -ne $Update.update_id) {
-                $UpdateId = [int64]$Update.update_id
-                if ($null -eq $NewestUpdateId -or $UpdateId -gt $NewestUpdateId) {
-                    $NewestUpdateId = $UpdateId
+        $Telegram = Get-Content -LiteralPath $Paths.Telegram -Raw | ConvertFrom-Json
+        if (-not $Telegram.enabled -or -not $Telegram.controlEnabled) {
+            return
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$Telegram.botToken) -or [string]::IsNullOrWhiteSpace([string]$Telegram.allowedChatId)) {
+            return
+        }
+
+        $AllowedChatId = [string]$Telegram.allowedChatId
+        $PollSeconds = [Math]::Max(2, [int]$Telegram.pollSeconds)
+        $Now = [datetime]::UtcNow
+        if (($Now - $script:LastTelegramPollUtc).TotalSeconds -lt $PollSeconds) {
+            return
+        }
+        $script:LastTelegramPollUtc = $Now
+
+        $PollingState = Get-GameBlockerTelegramPollingState -InstallDir $InstallDir
+        $LastUpdateId = $null
+        if (-not [string]::IsNullOrWhiteSpace([string]$PollingState.lastUpdateId)) {
+            $LastUpdateId = [int64]$PollingState.lastUpdateId
+        }
+
+        try {
+            $Uri = "https://api.telegram.org/bot$($Telegram.botToken)/getUpdates"
+            $Body = @{
+                timeout         = 0
+                allowed_updates = '["message"]'
+            }
+            if ($null -ne $LastUpdateId) {
+                $Body.offset = $LastUpdateId + 1
+            }
+
+            $Response = Invoke-RestMethod -Method Post -Uri $Uri -Body $Body -TimeoutSec 10
+            if (-not $Response.ok) {
+                throw 'Telegram getUpdates returned ok=false.'
+            }
+
+            $NewestUpdateId = $LastUpdateId
+            foreach ($Update in @($Response.result)) {
+                $UpdateId = $null
+                if ($null -ne $Update.update_id) {
+                    $UpdateId = [int64]$Update.update_id
+                    if ($null -ne $LastUpdateId -and $UpdateId -le $LastUpdateId) {
+                        continue
+                    }
+                    if ($null -eq $NewestUpdateId -or $UpdateId -gt $NewestUpdateId) {
+                        $NewestUpdateId = $UpdateId
+                    }
+
+                    Set-GameBlockerTelegramPollingState -InstallDir $InstallDir -LastUpdateId $UpdateId -LastPollUtc $Now.ToString('o') -LastErrorUtc ([string]$PollingState.lastErrorUtc)
+                }
+
+                if ($null -eq $Update.message -or [string]::IsNullOrWhiteSpace([string]$Update.message.text)) {
+                    continue
+                }
+
+                $ChatId = [string]$Update.message.chat.id
+                if ($ChatId -ne $AllowedChatId) {
+                    Write-GameBlockerLocalEvent -InstallDir $InstallDir -Type 'telegram-unauthorized-chat' -Message 'Ignored Telegram command from non-allowed chat.'
+                    continue
+                }
+
+                try {
+                    Invoke-GameBlockerTelegramCommand -InstallDir $InstallDir -Telegram $Telegram -Text ([string]$Update.message.text)
+                } catch {
+                    Write-GameBlockerLocalEvent -InstallDir $InstallDir -Type 'telegram-command-error' -Message $_.Exception.Message
                 }
             }
 
-            if ($null -eq $Update.message -or [string]::IsNullOrWhiteSpace([string]$Update.message.text)) {
-                continue
-            }
-
-            $ChatId = [string]$Update.message.chat.id
-            if ($ChatId -ne $AllowedChatId) {
-                Write-GameBlockerLocalEvent -InstallDir $InstallDir -Type 'telegram-unauthorized-chat' -Message 'Ignored Telegram command from non-allowed chat.'
-                continue
-            }
-
-            Invoke-GameBlockerTelegramCommand -InstallDir $InstallDir -Telegram $Telegram -Text ([string]$Update.message.text)
+            Set-GameBlockerTelegramPollingState -InstallDir $InstallDir -LastUpdateId $NewestUpdateId -LastPollUtc $Now.ToString('o') -LastErrorUtc ([string]$PollingState.lastErrorUtc)
+        } catch {
+            $CurrentPollingState = Get-GameBlockerTelegramPollingState -InstallDir $InstallDir
+            $CurrentUpdateId = if ([string]::IsNullOrWhiteSpace([string]$CurrentPollingState.lastUpdateId)) { $LastUpdateId } else { [int64]$CurrentPollingState.lastUpdateId }
+            Set-GameBlockerTelegramPollingState -InstallDir $InstallDir -LastUpdateId $CurrentUpdateId -LastPollUtc $Now.ToString('o') -LastErrorUtc $Now.ToString('o')
+            Write-GameBlockerLocalEvent -InstallDir $InstallDir -Type 'telegram-control-error' -Message $_.Exception.Message
         }
-
-        Set-GameBlockerTelegramPollingState -InstallDir $InstallDir -LastUpdateId $NewestUpdateId -LastPollUtc $Now.ToString('o') -LastErrorUtc ([string]$PollingState.lastErrorUtc)
-    } catch {
-        Set-GameBlockerTelegramPollingState -InstallDir $InstallDir -LastUpdateId $LastUpdateId -LastPollUtc $Now.ToString('o') -LastErrorUtc $Now.ToString('o')
-        Write-GameBlockerLocalEvent -InstallDir $InstallDir -Type 'telegram-control-error' -Message $_.Exception.Message
+    } finally {
+        if ($TelegramMutexAcquired) {
+            $TelegramMutex.ReleaseMutex()
+        }
+        $TelegramMutex.Dispose()
     }
 }
 

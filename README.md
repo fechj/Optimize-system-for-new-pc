@@ -60,6 +60,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:WGB_SOURCE_BASE_URL
 
 `/allow forever` разрешает игры без срока. Блокировка вернется только после команды `/block`.
 
+Если после обновления файлов бот все еще отвечает как старая версия, повторно запустите установочную команду. Установщик остановит старую scheduled task и старые watcher-процессы, затем поставит новую версию.
+
+Если бот повторяет одни и те же ответы каждые несколько секунд, это значит, что старые Telegram updates перечитываются или параллельно работает старый watcher. Обновите `scripts\GameBlocker.Common.ps1`, `scripts\Install-GameBlocker.ps1`, `scripts\Watch-GameProcesses.ps1` в GitHub и повторно запустите установочную команду. Новая установка сбросит offset Telegram до последнего сообщения и не будет проигрывать старые команды.
+
 Важно: это не remote shell. Бот не выполняет произвольный PowerShell, а принимает только эти четыре команды.
 
 Без Telegram:

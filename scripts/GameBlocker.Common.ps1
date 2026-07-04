@@ -205,6 +205,85 @@ function Send-GameBlockerTelegramDirect {
     Invoke-RestMethod -Method Post -Uri $Uri -Body $Body -TimeoutSec 10 | Out-Null
 }
 
+function Get-GameBlockerTelegramPollingState {
+    param([string]$InstallDir)
+
+    $Paths = Get-GameBlockerPaths -InstallDir $InstallDir
+    if (-not (Test-Path -LiteralPath $Paths.TelegramState)) {
+        return [pscustomobject]@{
+            lastUpdateId = $null
+            lastPollUtc  = $null
+            lastErrorUtc = $null
+        }
+    }
+
+    return Get-Content -LiteralPath $Paths.TelegramState -Raw | ConvertFrom-Json
+}
+
+function Set-GameBlockerTelegramPollingState {
+    param(
+        [string]$InstallDir,
+        [object]$LastUpdateId,
+        [string]$LastPollUtc,
+        [string]$LastErrorUtc
+    )
+
+    $Paths = Get-GameBlockerPaths -InstallDir $InstallDir
+    $StoredUpdateId = $null
+    if ($null -ne $LastUpdateId -and -not [string]::IsNullOrWhiteSpace([string]$LastUpdateId)) {
+        $StoredUpdateId = [int64]$LastUpdateId
+    }
+
+    $State = [ordered]@{
+        lastUpdateId = $StoredUpdateId
+        lastPollUtc  = $LastPollUtc
+        lastErrorUtc = $LastErrorUtc
+    }
+
+    $State | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $Paths.TelegramState -Encoding UTF8
+}
+
+function Initialize-GameBlockerTelegramOffset {
+    param([string]$InstallDir)
+
+    $Paths = Get-GameBlockerPaths -InstallDir $InstallDir
+    if (-not (Test-Path -LiteralPath $Paths.Telegram)) {
+        return $null
+    }
+
+    $Telegram = Get-Content -LiteralPath $Paths.Telegram -Raw | ConvertFrom-Json
+    if (-not $Telegram.enabled -or -not $Telegram.controlEnabled) {
+        return $null
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$Telegram.botToken)) {
+        return $null
+    }
+
+    try {
+        $Uri = "https://api.telegram.org/bot$($Telegram.botToken)/getUpdates"
+        $Response = Invoke-RestMethod -Method Post -Uri $Uri -Body @{
+            timeout         = 0
+            allowed_updates = '["message"]'
+        } -TimeoutSec 10
+
+        $LastUpdateId = $null
+        foreach ($Update in @($Response.result)) {
+            if ($null -ne $Update.update_id) {
+                $UpdateId = [int64]$Update.update_id
+                if ($null -eq $LastUpdateId -or $UpdateId -gt $LastUpdateId) {
+                    $LastUpdateId = $UpdateId
+                }
+            }
+        }
+
+        Set-GameBlockerTelegramPollingState -InstallDir $InstallDir -LastUpdateId $LastUpdateId -LastPollUtc ([datetime]::UtcNow).ToString('o') -LastErrorUtc $null
+        return $LastUpdateId
+    } catch {
+        Write-GameBlockerLocalEvent -InstallDir $InstallDir -Type 'telegram-offset-init-error' -Message $_.Exception.Message
+        return $null
+    }
+}
+
 function Publish-GameBlockerEvent {
     param(
         [string]$InstallDir,
