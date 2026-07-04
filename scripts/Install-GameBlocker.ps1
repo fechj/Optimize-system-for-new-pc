@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$InstallDir = (Join-Path $env:ProgramData 'WorkGameBlocker'),
+    [string]$SourceBaseUrl,
     [string]$TelegramBotToken,
     [string]$TelegramChatId,
     [string]$ControlUrl,
@@ -52,10 +53,17 @@ New-Item -ItemType Directory -Force -Path $ScriptInstallDir, $ConfigInstallDir, 
 Copy-Item -LiteralPath (Join-Path $SourceRoot 'scripts\GameBlocker.Common.ps1') -Destination $ScriptInstallDir -Force
 Copy-Item -LiteralPath (Join-Path $SourceRoot 'scripts\Watch-GameProcesses.ps1') -Destination $ScriptInstallDir -Force
 Copy-Item -LiteralPath (Join-Path $SourceRoot 'scripts\Set-GameBlockerState.ps1') -Destination $ScriptInstallDir -Force
+Copy-Item -LiteralPath (Join-Path $SourceRoot 'scripts\Update-GameBlocker.ps1') -Destination $ScriptInstallDir -Force
 Copy-Item -LiteralPath (Join-Path $SourceRoot 'scripts\Uninstall-GameBlocker.ps1') -Destination $ScriptInstallDir -Force
 Copy-Item -LiteralPath (Join-Path $SourceRoot 'config\blocked-apps.json') -Destination $ConfigInstallDir -Force
 
 Protect-GameBlockerInstallDir -Path $InstallDir
+
+$UpdateConfig = [ordered]@{
+    enabled       = -not [string]::IsNullOrWhiteSpace($SourceBaseUrl)
+    sourceBaseUrl = if ([string]::IsNullOrWhiteSpace($SourceBaseUrl)) { $null } else { $SourceBaseUrl.TrimEnd('/') }
+}
+$UpdateConfig | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $InstallDir 'update.json') -Encoding UTF8
 
 $TelegramEnabled = -not $NoTelegram -and -not [string]::IsNullOrWhiteSpace($TelegramBotToken) -and -not [string]::IsNullOrWhiteSpace($TelegramChatId)
 $TelegramConfig = [ordered]@{
@@ -103,6 +111,7 @@ Publish-GameBlockerEvent -InstallDir $InstallDir -Type 'installed' -Message 'Gam
     telegramControl = [bool]($TelegramEnabled -and $EnableTelegramControl)
     initializedTelegramOffset = $InitializedTelegramOffset
     remoteControl = $ControlEnabled
+    updateEnabled = [bool]$UpdateConfig.enabled
     stoppedOldWatchers = $OldWatcherCount
     mode          = if ($StartAllowed) { 'Allow' } else { 'Block' }
 }
@@ -112,3 +121,4 @@ Write-Host "Scheduled task: $($script:GameBlockerTaskPath)$($script:GameBlockerT
 Write-Host "Firewall rules created: $FirewallRuleCount"
 Write-Host "Telegram control enabled: $([bool]($TelegramEnabled -and $EnableTelegramControl))"
 Write-Host "Remote control enabled: $ControlEnabled"
+Write-Host "Self-update enabled: $([bool]$UpdateConfig.enabled)"

@@ -53,6 +53,7 @@ function Install-WorkGameBlocker {
         'scripts/GameBlocker.Common.ps1',
         'scripts/Install-GameBlocker.ps1',
         'scripts/Set-GameBlockerState.ps1',
+        'scripts/Update-GameBlocker.ps1',
         'scripts/Watch-GameProcesses.ps1',
         'scripts/Uninstall-GameBlocker.ps1'
     )
@@ -68,8 +69,9 @@ function Install-WorkGameBlocker {
 
     $InstallScript = Join-Path $BootstrapRoot 'scripts\Install-GameBlocker.ps1'
     $InstallArgs = @{
-        InstallDir = $InstallDir
-        DeviceId   = $DeviceId
+        InstallDir     = $InstallDir
+        DeviceId       = $DeviceId
+        SourceBaseUrl  = $SourceBaseUrl
     }
 
     if (-not [string]::IsNullOrWhiteSpace($TelegramBotToken) -and -not [string]::IsNullOrWhiteSpace($TelegramChatId)) {

@@ -53,6 +53,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:WGB_SOURCE_BASE_URL
 /allow 60
 /allow forever
 /status
+/update
 /uninstall
 /help
 ```
@@ -60,6 +61,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:WGB_SOURCE_BASE_URL
 `/allow 60` разрешает игры на 60 минут. Можно указать от 1 до 1440 минут. Когда время закончится, watcher сам вернет блокировку.
 
 `/allow forever` разрешает игры без срока. Блокировка вернется только после команды `/block`.
+
+`/update` подтягивает свежие файлы из GitHub raw URL, который был указан при установке, и переустанавливает WorkGameBlocker. Это нужно, чтобы больше не просить сотрудника вводить PowerShell-команду при каждом обновлении.
 
 `/uninstall` удаляет WorkGameBlocker с ПК: scheduled task, firewall rules и папку `C:\ProgramData\WorkGameBlocker`. Личные файлы и сторонние настройки не трогает.
 

@@ -32,6 +32,7 @@ $RequiredFiles = @(
     'scripts\GameBlocker.Common.ps1',
     'scripts\Install-GameBlocker.ps1',
     'scripts\Set-GameBlockerState.ps1',
+    'scripts\Update-GameBlocker.ps1',
     'scripts\Uninstall-GameBlocker.ps1',
     'scripts\Watch-GameProcesses.ps1'
 )
@@ -50,17 +51,20 @@ if (Test-Path -LiteralPath $ConfigPath) {
 
 $Install = Read-Text 'scripts\Install-GameBlocker.ps1'
 $State = Read-Text 'scripts\Set-GameBlockerState.ps1'
+$Update = Read-Text 'scripts\Update-GameBlocker.ps1'
 $Watcher = Read-Text 'scripts\Watch-GameProcesses.ps1'
 $Uninstall = Read-Text 'scripts\Uninstall-GameBlocker.ps1'
 $Common = Read-Text 'scripts\GameBlocker.Common.ps1'
 $Bootstrap = Read-Text 'Bootstrap-GameBlocker.ps1'
-$AllScripts = "$Bootstrap`n$Common`n$Install`n$State`n$Watcher`n$Uninstall"
+$AllScripts = "$Bootstrap`n$Common`n$Install`n$State`n$Update`n$Watcher`n$Uninstall"
 
 Assert-True ($Bootstrap -match 'Install-WorkGameBlocker') 'Bootstrap should expose an install function for irm | iex usage.'
 Assert-True ($Bootstrap -match 'SourceBaseUrl') 'Bootstrap should download package files from a raw source base URL.'
 Assert-True ($Install -match 'Register-ScheduledTask') 'Installer should register a visible Windows scheduled task.'
 Assert-True ($Install -match 'Stop-ScheduledTask') 'Installer should stop the previous scheduled task before replacing it.'
 Assert-True ($AllScripts -match 'Stop-GameBlockerExistingWatchers') 'Installer should stop old watcher processes before starting a new watcher.'
+Assert-True ($Bootstrap -match 'SourceBaseUrl' -and $Install -match 'SourceBaseUrl') 'Bootstrap should pass SourceBaseUrl into the installer.'
+Assert-True ($Install -match 'update\.json') 'Installer should store update source settings locally.'
 Assert-True ($AllScripts -match 'New-NetFirewallRule') 'Package should create firewall rules for known installed paths.'
 Assert-True ($Install -match 'ControlUrl') 'Installer should accept a remote control URL.'
 Assert-True ($State -match 'Block|Allow') 'State script should support block and allow modes.'
@@ -74,6 +78,8 @@ Assert-True ($Watcher -match '/block' -and $Watcher -match '/allow' -and $Watche
 Assert-True ($Watcher -match 'forever' -and $Watcher -match 'permanent') 'Telegram control should support /allow forever permanent access.'
 Assert-True ($Watcher -match '/uninstall' -and $Watcher -match 'Start-GameBlockerSelfUninstall') 'Telegram control should support scoped /uninstall for this tool.'
 Assert-True ($Watcher -match 'Uninstall-GameBlocker\.ps1' -and $Watcher -match 'Start-Process' -and $Watcher -match 'WindowStyle Hidden') 'Telegram uninstall should launch the bundled uninstaller in a hidden process.'
+Assert-True ($Watcher -match '/update' -and $Watcher -match 'Start-GameBlockerSelfUpdate') 'Telegram control should support /update self-update.'
+Assert-True ($Update -match 'Update-GameBlocker' -and $Update -match 'Invoke-WebRequest' -and $Update -match 'Install-GameBlocker\.ps1') 'Updater should download package files and run the bundled installer.'
 Assert-True ($Watcher -match 'Global\\WorkGameBlockerTelegramControl') 'Telegram polling should use a named mutex to avoid duplicate processing from parallel watchers.'
 Assert-True ($Watcher -match 'Set-GameBlockerTelegramPollingState -InstallDir \$InstallDir -LastUpdateId \$UpdateId') 'Telegram polling should acknowledge each update before executing its command.'
 Assert-True ($AllScripts -match 'Initialize-GameBlockerTelegramOffset') 'Installer should initialize Telegram offset so old commands are not replayed after reinstall.'

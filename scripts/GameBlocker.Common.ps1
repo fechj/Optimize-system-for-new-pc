@@ -22,6 +22,7 @@ function Get-GameBlockerPaths {
         State    = Join-Path $InstallDir 'state.json'
         Telegram = Join-Path $InstallDir 'telegram.json'
         TelegramState = Join-Path $InstallDir 'telegram-state.json'
+        Update   = Join-Path $InstallDir 'update.json'
         Control  = Join-Path $InstallDir 'control.json'
         ControlState = Join-Path $InstallDir 'remote-control-state.json'
         Logs     = Join-Path $InstallDir 'logs'

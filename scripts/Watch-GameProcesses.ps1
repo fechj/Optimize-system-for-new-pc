@@ -186,6 +186,33 @@ function Start-GameBlockerSelfUninstall {
     exit 0
 }
 
+function Start-GameBlockerSelfUpdate {
+    param(
+        [string]$InstallDir,
+        [object]$Telegram
+    )
+
+    $UpdateScript = Join-Path $InstallDir 'scripts\Update-GameBlocker.ps1'
+    if (-not (Test-Path -LiteralPath $UpdateScript)) {
+        Send-GameBlockerTelegramReply -Telegram $Telegram -Text "Update script not found: $UpdateScript"
+        return
+    }
+
+    $Paths = Get-GameBlockerPaths -InstallDir $InstallDir
+    if (-not (Test-Path -LiteralPath $Paths.Update)) {
+        Send-GameBlockerTelegramReply -Telegram $Telegram -Text 'Self-update is not configured. Reinstall once with WGB_SOURCE_BASE_URL.'
+        return
+    }
+
+    Publish-GameBlockerEvent -InstallDir $InstallDir -Type 'telegram-update-requested' -Message 'Telegram command requested WorkGameBlocker update.'
+    Send-GameBlockerTelegramReply -Telegram $Telegram -Text 'Update started. I will reinstall WorkGameBlocker from the configured GitHub raw URL.'
+
+    $PowerShellExe = Join-Path $PSHOME 'powershell.exe'
+    $ArgumentList = "-NoProfile -ExecutionPolicy Bypass -File `"$UpdateScript`" -InstallDir `"$InstallDir`""
+    Start-Process -FilePath $PowerShellExe -ArgumentList $ArgumentList -WindowStyle Hidden
+    exit 0
+}
+
 function Invoke-GameBlockerTelegramCommand {
     param(
         [string]$InstallDir,
@@ -242,6 +269,9 @@ function Invoke-GameBlockerTelegramCommand {
         '/status' {
             Send-GameBlockerTelegramReply -Telegram $Telegram -Text (Get-GameBlockerStatusText -InstallDir $InstallDir)
         }
+        '/update' {
+            Start-GameBlockerSelfUpdate -InstallDir $InstallDir -Telegram $Telegram
+        }
         '/uninstall' {
             Start-GameBlockerSelfUninstall -InstallDir $InstallDir -Telegram $Telegram
         }
@@ -249,10 +279,10 @@ function Invoke-GameBlockerTelegramCommand {
             Start-GameBlockerSelfUninstall -InstallDir $InstallDir -Telegram $Telegram
         }
         '/help' {
-            Send-GameBlockerTelegramReply -Telegram $Telegram -Text "Commands:`n/block`n/allow 60`n/allow forever`n/status`n/uninstall"
+            Send-GameBlockerTelegramReply -Telegram $Telegram -Text "Commands:`n/block`n/allow 60`n/allow forever`n/status`n/update`n/uninstall"
         }
         default {
-            Send-GameBlockerTelegramReply -Telegram $Telegram -Text "Unknown command. Use /block, /allow 60, /allow forever, /status, /uninstall."
+            Send-GameBlockerTelegramReply -Telegram $Telegram -Text "Unknown command. Use /block, /allow 60, /allow forever, /status, /update, /uninstall."
         }
     }
 }
